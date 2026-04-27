@@ -11,7 +11,7 @@
 
 A production-grade banking/wallet system demonstrating **Event Sourcing** and **CQRS** patterns with MongoDB.
 
-[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [API Docs](#-api-endpoints) • [Testing](#-testing)
+[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [API](#-api-endpoints) • [Testing](#-testing) • [Docs](#-documentation)
 
 **📖 [5-Minute Quick Start Guide](QUICKSTART.md)**
 
@@ -53,126 +53,90 @@ All state changes are stored as **immutable events** in an append-only event sto
 
 ## 🎨 Visual Architecture
 
-```mermaid
-graph TB
-    Client[Client Request]
-    
-    subgraph "Command Side (Write)"
-        Validate[Validate Input<br/>Zod Schema]
-        Load[Load Aggregate<br/>from Events]
-        Business[Execute<br/>Business Rules]
-        CreateEvent[Create Event]
-        Append[Append to<br/>Event Store]
-    end
-    
-    subgraph "Event Store"
-        Events[(Events Collection<br/>Append-Only)]
-    end
-    
-    subgraph "Projections"
-        UpdateProj[Update Projections<br/>MongoDB Transaction]
-        Balance[(Balance Model)]
-        Transactions[(Transaction Model)]
-    end
-    
-    subgraph "Query Side (Read)"
-        Query[Query Handler]
-        ReadModel[Read from<br/>Projections]
-    end
-    
-    Client -->|POST /commands| Validate
-    Validate --> Load
-    Load --> Business
-    Business --> CreateEvent
-    CreateEvent --> Append
-    Append --> Events
-    Append --> UpdateProj
-    UpdateProj --> Balance
-    UpdateProj --> Transactions
-    
-    Client -->|GET /queries| Query
-    Query --> ReadModel
-    ReadModel --> Balance
-    ReadModel --> Transactions
-    
-    Events -.->|Replay| Load
-    
-    style Events fill:#e1f5ff
-    style Balance fill:#fff4e1
-    style Transactions fill:#fff4e1
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CLIENT REQUEST                               │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                    ▼                           ▼
+        ┌───────────────────┐       ┌───────────────────┐
+        │   COMMAND SIDE    │       │    QUERY SIDE     │
+        │   (Write Model)   │       │   (Read Model)    │
+        └───────────────────┘       └───────────────────┘
+                    │                           │
+        ┌───────────▼───────────┐               │
+        │  1. Validate Input    │               │
+        │  2. Load Aggregate    │               │
+        │  3. Business Rules    │               │
+        │  4. Create Event      │               │
+        │  5. Append to Store   │               │
+        └───────────┬───────────┘               │
+                    │                           │
+                    ▼                           │
+        ┌───────────────────────┐               │
+        │   EVENT STORE         │               │
+        │   (Append-Only)       │               │
+        └───────────┬───────────┘               │
+                    │                           │
+                    │ Event Published           │
+                    │                           │
+                    └───────────┬───────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │   PROJECTION UPDATE   │
+                    │   (Synchronous)       │
+                    │                       │
+                    │  • Balance Model      │
+                    │  • Transaction Model  │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │   READ MODELS         │
+                    │   (Denormalized)      │
+                    │                       │
+                    │  Fast Query Access    │
+                    └───────────────────────┘
 ```
 
-## 📊 Event Flow Diagram
+## 📊 Event Flow Example
 
 ```
-┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ POST /api/commands/deposit
-     │ { accountId, amount: 500 }
-     ▼
+POST /api/commands/deposit { accountId, amount: 500 }
+    │
+    ▼
 ┌─────────────────────────────────────┐
 │  1. Validation (Zod)                │
 │     ✓ accountId is UUID             │
 │     ✓ amount > 0                    │
 └────┬────────────────────────────────┘
-     │
      ▼
 ┌─────────────────────────────────────┐
-│  2. Load Aggregate                  │
-│     events = getEvents(accountId)   │
-│     aggregate.loadFromEvents(events)│
+│  2. Load Aggregate from Events      │
 │     Current: balance=1000, v=3      │
 └────┬────────────────────────────────┘
-     │
      ▼
 ┌─────────────────────────────────────┐
 │  3. Business Rule Check             │
 │     ✓ Amount is positive            │
 └────┬────────────────────────────────┘
-     │
      ▼
 ┌─────────────────────────────────────┐
-│  4. Create Event                    │
-│     MoneyDeposited {                │
-│       accountId,                    │
-│       amount: 500,                  │
-│       timestamp: now()              │
-│     }                               │
+│  4. Create MoneyDeposited Event     │
 └────┬────────────────────────────────┘
-     │
      ▼
 ┌─────────────────────────────────────┐
-│  5. MongoDB Transaction START       │
+│  5. MongoDB Transaction             │
+│     ├─ Append Event (v=4)           │
+│     └─ Update Projections           │
 └────┬────────────────────────────────┘
-     │
-     ├─▶ Append to Event Store
-     │   {
-     │     aggregateId: "uuid",
-     │     eventType: "MoneyDeposited",
-     │     version: 4,  ← Optimistic lock
-     │     payload: { amount: 500 },
-     │     timestamp: "2024-..."
-     │   }
-     │
-     └─▶ Update Projections
-         ├─ Balance: 1000 → 1500
-         └─ Transaction: +500, balance=1500
-     
-┌─────────────────────────────────────┐
-│  6. MongoDB Transaction COMMIT      │
-└────┬────────────────────────────────┘
-     │
      ▼
 ┌─────────────────────────────────────┐
-│  7. Response                        │
-│     {                               │
-│       accountId,                    │
-│       amount: 500,                  │
-│       balance: 1500,                │
-│       version: 4                    │
-│     }                               │
+│  6. Response                        │
+│     { balance: 1500, version: 4 }   │
 └─────────────────────────────────────┘
 ```
 
@@ -184,16 +148,12 @@ Event Store (Immutable History)
 │ v1: AccountCreated                  │
 │     { ownerName, initialBalance }   │
 ├─────────────────────────────────────┤
-│ v2: MoneyDeposited                  │
-│     { amount: 500 }                 │
+│ v2: MoneyDeposited { amount: 500 }  │
 ├─────────────────────────────────────┤
-│ v3: MoneyWithdrawn                  │
-│     { amount: 200 }                 │
+│ v3: MoneyWithdrawn { amount: 200 }  │
 ├─────────────────────────────────────┤
-│ v4: MoneyDeposited                  │
-│     { amount: 300 }                 │
+│ v4: MoneyDeposited { amount: 300 }  │
 └─────────────────────────────────────┘
-         │
          │ Replay
          ▼
 ┌─────────────────────────────────────┐
@@ -210,30 +170,13 @@ Event Store (Immutable History)
 
 ---
 
-```
-src/
-├── domain/              # Core business logic
-│   ├── events/          # Event definitions
-│   ├── aggregates/      # AccountAggregate with replay logic
-├── application/         # Use case handlers
-│   ├── commands/        # Write operations
-│   └── queries/         # Read operations
-├── infrastructure/      # External concerns
-│   ├── repositories/    # Event store & projections
-│   └── persistence/     # Mongoose schemas
-├── api/                 # Express layer
-│   ├── routes/          # Command & query routes
-│   └── controllers/     # Request handlers
-└── middleware/          # Validation, error handling
-```
-
 ## 📁 Project Structure
 
 ```
 src/
 ├── domain/              # Core business logic
 │   ├── events/          # Event definitions
-│   ├── aggregates/      # AccountAggregate with replay logic
+│   └── aggregates/      # AccountAggregate with replay logic
 ├── application/         # Use case handlers
 │   ├── commands/        # Write operations
 │   └── queries/         # Read operations
@@ -248,6 +191,8 @@ src/
 └── utils/               # Logger, idempotency
 ```
 
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -258,55 +203,44 @@ src/
 ### Installation
 
 ```bash
+# Install dependencies
 pnpm install
-```
 
-### Build TypeScript
-
-```bash
+# Build TypeScript
 pnpm build
-```
 
-### Setup MongoDB with Docker
-
-```bash
+# Start MongoDB with Docker
 docker-compose up -d
+
+# Run development server
+pnpm dev
+
+# Seed sample data
+pnpm seed
 ```
 
 ### Environment Variables
 
 Create `.env` file (already provided):
-```
+```env
 PORT=3000
 MONGODB_URI=mongodb://localhost:27017/zeepay-es
 NODE_ENV=development
 LOG_LEVEL=info
 ```
 
-### Run Application
-
-Development mode with auto-reload:
-```bash
-pnpm dev
-```
-
-Production mode:
-```bash
-pnpm build
-pnpm start
-```
-
-### Type Check
+### Available Commands
 
 ```bash
-pnpm typecheck
+pnpm dev          # Start with hot reload
+pnpm build        # Compile TypeScript
+pnpm start        # Run production build
+pnpm test         # Run test suite
+pnpm typecheck    # Type checking
+pnpm seed         # Create sample data
 ```
 
-### Seed Sample Data
-
-```bash
-pnpm seed
-```
+---
 
 ## 📡 API Endpoints
 
@@ -314,9 +248,30 @@ pnpm seed
 
 ### Commands (Write Side)
 
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/commands/create-account` | POST | Create new account |
+| `/api/commands/deposit` | POST | Deposit money |
+| `/api/commands/withdraw` | POST | Withdraw money |
+| `/api/commands/transfer` | POST | Transfer between accounts |
+| `/api/commands/replay/:accountId` | POST | Rebuild state from events |
+
+### Queries (Read Side)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/queries/balance/:accountId` | GET | Get current balance |
+| `/api/queries/transactions/:accountId` | GET | Get transaction history |
+| `/api/queries/account/:accountId` | GET | Get account summary |
+| `/api/queries/accounts` | GET | List all accounts |
+
+### Example Requests
+
 **Create Account**
 ```bash
 POST /api/commands/create-account
+Content-Type: application/json
+
 {
   "ownerName": "John Doe",
   "initialDeposit": 1000
@@ -326,6 +281,9 @@ POST /api/commands/create-account
 **Deposit Money**
 ```bash
 POST /api/commands/deposit
+Content-Type: application/json
+Idempotency-Key: unique-key-123
+
 {
   "accountId": "uuid",
   "amount": 500,
@@ -333,55 +291,22 @@ POST /api/commands/deposit
 }
 ```
 
-**Withdraw Money**
-```bash
-POST /api/commands/withdraw
-{
-  "accountId": "uuid",
-  "amount": 100,
-  "description": "ATM withdrawal"
-}
-```
-
 **Transfer Money**
 ```bash
 POST /api/commands/transfer
+Content-Type: application/json
+
 {
-  "fromAccountId": "uuid",
-  "toAccountId": "uuid",
+  "fromAccountId": "uuid-1",
+  "toAccountId": "uuid-2",
   "amount": 200,
   "description": "Payment"
 }
 ```
 
-**Replay Events (Rebuild State)**
-```bash
-POST /api/commands/replay/:accountId
-```
+---
 
-### Queries (Read Side)
-
-**Get Balance**
-```bash
-GET /api/queries/balance/:accountId
-```
-
-**Get Transactions**
-```bash
-GET /api/queries/transactions/:accountId
-```
-
-**Get Account Summary**
-```bash
-GET /api/queries/account/:accountId
-```
-
-**List All Accounts**
-```bash
-GET /api/queries/accounts
-```
-
-## Key Features
+## � Key Features
 
 ### Immutable Event Store
 - Append-only collection
@@ -408,35 +333,7 @@ GET /api/queries/accounts
 - Demonstrates event sourcing power
 - Useful for audits and debugging
 
-## Event Sourcing vs Traditional CRUD
-
-### Advantages
-- Complete audit trail
-- Time travel (replay to any point)
-- Event-driven architecture ready
-- Scalable reads (multiple projections)
-- Business logic in events
-
-### Trade-offs
-- Added complexity
-- Eventual consistency in projections
-- Storage overhead
-- Learning curve
-
-## Business Rules
-
-- No overdrafts (withdrawals check balance)
-- Positive amounts only
-- Cannot transfer to same account
-- Atomic transfers (both accounts updated or neither)
-
-## Technical Highlights
-
-- **MongoDB Techniques**: Append-only store, optimistic locking, transactions, compound indexes
-- **Clean Architecture**: Domain, application, infrastructure layers
-- **Error Handling**: Proper HTTP status codes, validation, logging
-- **Security**: Helmet, CORS, input validation with Zod
-- **Logging**: Structured logging with Pino
+---
 
 ## 🧪 Testing
 
@@ -455,26 +352,85 @@ pnpm test
 
 ### Manual Testing
 
-1. Run seed script:
 ```bash
+# 1. Seed sample data
 pnpm seed
-```
 
-2. Test replay endpoint:
-```bash
+# 2. Test replay endpoint
 curl -X POST http://localhost:3000/api/commands/replay/{accountId}
+
+# 3. Verify balance matches event history
+curl http://localhost:3000/api/queries/balance/{accountId}
 ```
 
-3. Verify balance matches event history
+---
 
 ## 📚 Documentation
 
 - 📖 [Architecture Guide](ARCHITECTURE.md) - Deep dive into Event Sourcing + CQRS
+- 🚀 [Quick Start Guide](QUICKSTART.md) - Get running in 5 minutes
+- 📋 [Project Summary](PROJECT_SUMMARY.md) - Complete implementation checklist
+- ✅ [Implementation Checklist](IMPLEMENTATION_CHECKLIST.md) - 200+ items verified
+- 🔄 [TypeScript Migration](TYPESCRIPT_MIGRATION.md) - Conversion details
 - 📡 [Postman Collection](postman_collection.json) - API testing
+
+---
+
+## 💡 Event Sourcing vs Traditional CRUD
+
+### Advantages
+- ✅ Complete audit trail
+- ✅ Time travel (replay to any point)
+- ✅ Event-driven architecture ready
+- ✅ Scalable reads (multiple projections)
+- ✅ Business logic in events
+
+### Trade-offs
+- ⚠️ Added complexity
+- ⚠️ Eventual consistency in projections
+- ⚠️ Storage overhead
+- ⚠️ Learning curve
+
+---
+
+## 🎯 Business Rules
+
+- ✅ No overdrafts (withdrawals check balance)
+- ✅ Positive amounts only
+- ✅ Cannot transfer to same account
+- ✅ Atomic transfers (both accounts updated or neither)
+
+---
+
+## 🔧 Technical Highlights
+
+- **MongoDB Techniques**: Append-only store, optimistic locking, transactions, compound indexes
+- **Clean Architecture**: Domain, application, infrastructure layers
+- **Error Handling**: Proper HTTP status codes, validation, logging
+- **Security**: Helmet, CORS, input validation with Zod
+- **Logging**: Structured logging with Pino
+- **Type Safety**: TypeScript strict mode
+
+---
+
+## 🚀 Production Considerations
+
+- [ ] Use Redis for idempotency cache
+- [ ] Implement event versioning for schema evolution
+- [ ] Add authentication/authorization
+- [ ] Set up monitoring and alerting
+- [ ] Consider event snapshots for performance
+- [ ] Implement CQRS projections with change streams
+- [ ] Add rate limiting
+- [ ] Use connection pooling
+
+---
 
 ## 🤝 Contributing
 
 Contributions welcome! This is a portfolio/learning project demonstrating advanced backend patterns.
+
+---
 
 ## 📄 License
 
@@ -489,19 +445,3 @@ ISC
 [⬆ Back to Top](#-zeepay-api)
 
 </div>
-
-- Use Redis for idempotency cache
-- Implement event versioning for schema evolution
-- Add authentication/authorization
-- Set up monitoring and alerting
-- Consider event snapshots for performance
-- Implement CQRS projections with change streams
-- Add rate limiting
-- Use connection pooling
-
-## License
-
-ISC
-#   z e e p a y - a p i 
- 
- 
