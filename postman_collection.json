@@ -1,0 +1,231 @@
+{
+  "info": {
+    "name": "ZeePay API - Event Sourcing + CQRS",
+    "description": "Complete API collection for testing the Event Sourcing banking system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Commands (Write Side)",
+      "item": [
+        {
+          "name": "Create Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Optional: Prevents duplicate processing"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerName\": \"John Doe\",\n  \"initialDeposit\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/commands/create-account",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "commands", "create-account"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit Money",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 500,\n  \"description\": \"Salary deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/commands/deposit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "commands", "deposit"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw Money",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100,\n  \"description\": \"ATM withdrawal\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/commands/withdraw",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "commands", "withdraw"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Transfer Money",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccountId\": \"{{accountId}}\",\n  \"toAccountId\": \"{{toAccountId}}\",\n  \"amount\": 200,\n  \"description\": \"Payment for services\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/commands/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "commands", "transfer"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Events",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/commands/replay/:accountId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "commands", "replay", ":accountId"],
+              "variable": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Queries (Read Side)",
+      "item": [
+        {
+          "name": "Get Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/queries/balance/:accountId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "queries", "balance", ":accountId"],
+              "variable": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/queries/transactions/:accountId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "queries", "transactions", ":accountId"],
+              "variable": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Account Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/queries/account/:accountId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "queries", "account", ":accountId"],
+              "variable": [
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Accounts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/queries/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "queries", "accounts"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "toAccountId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
